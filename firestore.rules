@@ -1,0 +1,71 @@
+rules_version = '2';
+// Reglas de seguridad de la votación Montepiedra. Todo lo importante se valida aquí, en el servidor:
+// - cada código sirve solo para su propiedad y se usa una sola vez (inscripción);
+// - cada propiedad vota una sola vez por tema, solo mientras el tema está abierto y si está habilitada;
+// - los votantes solo leen sus propias inscripciones y votos; nadie ve votos ajenos antes del cierre,
+//   salvo la administración (cuentas de Google registradas en /admins).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function email() { return request.auth.token.get('email', '').lower(); }
+    function isAdmin() {
+      return signedIn() && request.auth.token.get('email_verified', false) == true && email() != ''
+        && exists(/databases/$(database)/documents/admins/$(email()));
+    }
+    function habil(k) {
+      let h = /databases/$(database)/documents/config/habiles;
+      return !exists(h) || !(k in get(h).data.get('inhabiles', {}));
+    }
+    function validReg(k) {
+      let d = request.resource.data;
+      let c = get(/databases/$(database)/documents/claves/$(d.clave));
+      return d.keys().hasOnly(['unit', 'uid', 'clave', 'name', 'at', 'via'])
+        && d.unit == k && d.at == request.time
+        && d.name is string && d.name.size() <= 80
+        && ((d.uid == request.auth.uid && d.via == 'app') || (d.uid == 'mesa' && d.via == 'mesa' && isAdmin()))
+        && c.data.unit == k
+        && habil(k);
+    }
+    function validVote(vid) {
+      let d = request.resource.data;
+      let r = get(/databases/$(database)/documents/reg/$(d.unit));
+      let it = get(/databases/$(database)/documents/items/$(d.item));
+      return d.keys().hasOnly(['item', 'unit', 'option', 'at', 'uid', 'channel', 'name'])
+        && vid == d.item + '__' + d.unit
+        && d.at == request.time
+        && r.data.uid == d.uid && d.name == r.data.name
+        && ((d.uid == request.auth.uid && d.channel == 'app') || (d.uid == 'mesa' && d.channel == 'mesa' && isAdmin()))
+        && it.data.status == 'open' && d.option in it.data.options
+        && habil(d.unit);
+    }
+
+    match /admins/{e} {
+      allow get: if signedIn() && (email() == e || isAdmin());
+      allow list, write: if isAdmin();
+    }
+    match /config/{d} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /items/{id} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /stats/{d} { allow read: if signedIn(); allow write: if isAdmin(); }
+    match /secretos/{d} { allow read, write: if isAdmin(); }
+    match /asistencia/{k} { allow read, write: if isAdmin(); }
+    // Una clave existe solo si alguien conoce la propiedad y su código; no se puede listar.
+    match /claves/{h} {
+      allow get: if signedIn();
+      allow list, write: if isAdmin();
+    }
+    match /reg/{k} {
+      allow get: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn() && validReg(k);
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+    match /votos/{vid} {
+      allow get: if signedIn() && (resource == null || resource.data.uid == request.auth.uid || isAdmin());
+      allow list: if isAdmin() || (signedIn() && resource.data.uid == request.auth.uid);
+      allow create: if signedIn() && validVote(vid);
+      allow delete: if isAdmin();
+      allow update: if false;
+    }
+  }
+}

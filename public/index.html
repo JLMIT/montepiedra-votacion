@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Votación Asamblea Montepiedra</title>
+<meta name="description" content="Votación por alícuotas en la asamblea de copropietarios del Condominio Montepiedra.">
+<meta name="theme-color" content="#2f5d46">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css?v=202611101400">
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <div class="brand"><small>Condominio Montepiedra</small><h1 id="h-title">Asamblea de copropietarios</h1></div>
+    <div class="hq" id="h-quorum">Conectando…</div>
+  </div>
+  <nav id="nav">
+    <button data-tab="votar" class="on">Votar</button>
+    <button data-tab="pantalla">Resultados en vivo</button>
+    <button data-tab="admin" class="hide" id="nav-admin">Administración</button>
+  </nav>
+</header>
+<div class="status" id="status"></div>
+
+<main>
+<!-- ============ VOTAR ============ -->
+<section id="tab-votar">
+  <div class="card">
+    <h2>Inscriba su propiedad</h2>
+    <p class="muted small" style="margin:0 0 4px">Seleccione su propiedad y escriba el código que le entregaron en la mesa al presentarse. Cada código sirve para una sola propiedad y se usa una sola vez. Si viene con poder de otras propiedades, inscríbalas una por una con su propio código: su voto contará por todas.</p>
+    <form id="f-reg" autocomplete="off">
+      <div class="grid3">
+        <div><label class="f" for="r-unit">Propiedad</label><select class="in" id="r-unit"><option value="">Seleccione su propiedad…</option></select></div>
+        <div><label class="f" for="r-code">Código</label><input class="in mono" id="r-code" placeholder="XXXX-XXXX" autocapitalize="characters" spellcheck="false"></div>
+        <div><label class="f" for="r-name">Nombre de quien vota (opcional)</label><input class="in" id="r-name" placeholder="Nombre y apellido"></div>
+      </div>
+      <div class="row" style="margin-top:12px"><button class="btn pri" type="submit">Inscribir propiedad</button><span id="r-msg" class="small"></span></div>
+    </form>
+    <div id="my-props"></div>
+  </div>
+  <div id="v-open"></div>
+  <div id="v-closed"></div>
+</section>
+
+<!-- ============ PANTALLA ============ -->
+<section id="tab-pantalla" class="hide">
+  <div class="pills" id="s-pills"></div>
+  <div class="screen">
+    <div id="s-main"></div>
+    <div id="s-side"></div>
+  </div>
+</section>
+
+<!-- ============ ADMIN ============ -->
+<section id="tab-admin" class="hide">
+  <div class="grid2">
+    <div class="card">
+      <h2>Datos de la asamblea</h2>
+      <form id="f-config">
+        <label class="f" for="c-name">Nombre</label><input class="in" id="c-name" placeholder="Asamblea ordinaria de copropietarios">
+        <label class="f" for="c-date">Fecha</label><input class="in" id="c-date" type="date">
+        <div class="row" style="margin-top:12px"><button class="btn pri" type="submit">Guardar</button></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2 id="it-form-title">Nuevo tema a votación</h2>
+      <form id="f-item">
+        <input type="hidden" id="i-id">
+        <label class="f" for="i-title">Título</label><input class="in" id="i-title" required placeholder="Ej.: Aprobación del presupuesto 2027">
+        <label class="f" for="i-desc">Descripción (opcional)</label><textarea class="in" id="i-desc"></textarea>
+        <label class="f" for="i-type">Tipo de sesión y quórum</label>
+        <select class="in" id="i-type">
+          <option value="ORD">Ordinaria: mayoría absoluta de los derechos presentes (sesiona con 33%)</option>
+          <option value="EXA">Extraordinaria de mayoría absoluta: más del 50% del total de derechos</option>
+          <option value="EXR">Extraordinaria de mayoría reforzada: 66% del total de derechos</option>
+        </select>
+        <label class="f" for="i-opts">Opciones (separadas por coma)</label><input class="in" id="i-opts" value="Sí, No, Abstención">
+        <p class="small muted" style="margin:10px 0 0">Los resultados se muestran solo cuando la administración cierra la votación.</p>
+        <div class="row" style="margin-top:12px"><button class="btn pri" type="submit" id="i-submit">Agregar tema</button><button class="btn hide" type="button" id="i-cancel">Cancelar edición</button><span id="i-msg" class="small muted"></span></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between"><h2>Temas sometidos a votación</h2><div class="row"><button class="btn sm" data-act="acta">Copiar acta de resultados</button></div></div>
+    <div id="a-items"></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>Códigos de acceso</h2>
+      <p class="muted small" style="margin:0 0 10px">Un código por propiedad, válido una sola vez. Puede generarlos aquí o cargar su propio listado desde Excel. Cargar o generar un listado nuevo anula los códigos y las inscripciones anteriores (los votos emitidos se mantienen).</p>
+      <div id="a-codes"></div>
+    </div>
+    <div class="card">
+      <h2>Voto asistido en la mesa</h2>
+      <p class="muted small" style="margin:0">Para quien no tiene teléfono: la mesa inscribe la propiedad con su código una sola vez y luego registra su voto en cada tema. Queda marcado como «mesa» en la auditoría.</p>
+      <div id="a-assist">
+        <label class="f" for="as-unit">Propiedad</label><select class="in" id="as-unit"><option value="">Seleccione…</option></select>
+        <label class="f" for="as-code">Código (solo la primera vez que la propiedad vota en la mesa)</label><input class="in mono" id="as-code" placeholder="XXXX-XXXX" autocapitalize="characters" spellcheck="false">
+        <div id="a-assist-dyn"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <div><h2>Propiedades: inscripción, asistencia y habilitación</h2><p class="muted small" style="margin:0">Una propiedad queda presente al inscribirse con su código. «Presente manual» sirve para quien asiste sin inscribirse. «Inhabilitada» la excluye de votar y del quórum (por ejemplo, morosidad, si el reglamento lo establece). «Liberar» deja su código disponible otra vez (por ejemplo, si cambió de teléfono).</p></div>
+      <input class="in" id="u-search" placeholder="Buscar propiedad…" style="max-width:240px">
+    </div>
+    <div id="u-sum" class="small" style="margin:10px 0"></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Propiedad</th><th class="r">Alícuota</th><th>Código</th><th>Inscripción</th><th>Presente manual</th><th>Inhabilitada</th><th class="r">Votos</th></tr></thead><tbody id="u-body"></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <h2>Administradores</h2>
+    <p class="muted small" style="margin:0 0 10px">Entran con su cuenta de Google desde «Acceso administración», al pie de la página. No necesitan código y no votan salvo que inscriban una propiedad.</p>
+    <div id="a-admins"></div>
+    <form id="f-admin" class="row" style="margin-top:10px"><input class="in" id="ad-email" type="email" placeholder="correo@ejemplo.cl" style="max-width:320px" required><button class="btn" type="submit">Agregar administrador</button></form>
+  </div>
+
+  <div class="card">
+    <h2>Cómo se calcula el resultado</h2>
+    <div class="formula small">
+      <p style="margin-top:0"><b>Peso de cada propiedad</b> = su alícuota ÷ suma de todas las alícuotas (la planilla suma 100,00016%; se normaliza a 100%).</p>
+      <p><b>Voto con poder</b>: quien inscribe varias propiedades emite un solo voto, que se registra por cada una de ellas; pesa la suma de sus alícuotas.</p>
+      <p><b>Derechos presentes</b> = suma de los pesos de las propiedades presentes y habilitadas (inscritas, marcadas a mano o que votaron).</p>
+      <p><b>Votos por opción</b> = suma de los pesos de las propiedades que eligieron esa opción. Se cuentan derechos, no personas.</p>
+      <p><b>Ordinaria:</b> se aprueba si «Sí» supera el 50% de los derechos presentes; abstenerse o no votar equivale a no apoyar; requiere asistencia de al menos 33% del total.<br>
+      <b>Extraordinaria de mayoría absoluta:</b> «Sí» supera el 50% del total de derechos; asistencia superior al 50%.<br>
+      <b>Extraordinaria de mayoría reforzada:</b> «Sí» alcanza al menos 66% del total de derechos; asistencia de al menos 66%.</p>
+      <p style="margin-bottom:0"><b>Temas con alternativas</b> (sin opción «Sí»): gana la alternativa con más derechos si alcanza el mismo umbral; si no, queda «sin mayoría requerida». Al cerrar un tema, el resultado se calcula, se publica y queda congelado. Mientras la votación está abierta nadie ve resultados parciales: los votantes solo ven su propio voto y la administración solo ve cuántas propiedades han votado.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Zona de riesgo</h2>
+    <div class="row"><button class="btn danger" data-act="reset-all">Reiniciar asamblea (borra inscripciones, asistencia y todos los votos)</button></div>
+  </div>
+</section>
+</main>
+
+<footer class="foot"><span id="foot-who">Votación por alícuotas · Condominio Montepiedra</span><span><button type="button" id="btn-admin">Acceso administración</button><button type="button" id="btn-out" class="hide">Cerrar sesión de administrador</button></span></footer>
+
+<div class="modal" id="modal"><div class="box" id="modal-box"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
+<script type="module" src="/app.js?v=202611101400"></script>
+</body>
+</html>

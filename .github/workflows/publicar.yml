@@ -1,0 +1,71 @@
+name: Publicar votación Montepiedra
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: publicar
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Instalar dependencias
+        working-directory: scripts
+        run: npm install --no-audit --no-fund
+
+      - name: Probar reglas de seguridad (emulador)
+        run: |
+          set -o pipefail
+          if ! npx --yes firebase-tools@13.29.1 emulators:exec --only firestore --project demo-montepiedra "node scripts/rules.test.mjs" 2>&1 | tee "$RUNNER_TEMP/rules.log"; then
+            msg=$(grep -E '✗|Error|error' "$RUNNER_TEMP/rules.log" | tail -25 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Reglas de seguridad::$msg"
+            exit 1
+          fi
+          echo "::notice title=Reglas de seguridad::$(grep 'pruebas de reglas' "$RUNNER_TEMP/rules.log")"
+
+      - name: Credenciales de Firebase
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then echo "::error::Falta el secreto FIREBASE_SERVICE_ACCOUNT en GitHub (Settings → Secrets and variables → Actions)."; exit 1; fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/sa.json" >> "$GITHUB_ENV"
+
+      - name: Publicar app y reglas de seguridad
+        run: |
+          set -o pipefail
+          if ! npx --yes firebase-tools@13.29.1 deploy --only hosting,firestore:rules --project montepiedra-f6ce2 --non-interactive 2>&1 | tee "$RUNNER_TEMP/deploy.log"; then
+            msg=$(grep -v '^\s*$' "$RUNNER_TEMP/deploy.log" | tail -25 | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Firebase deploy::$msg"
+            exit 1
+          fi
+
+      - name: Cargar datos iniciales (solo los que falten)
+        working-directory: scripts
+        run: |
+          set -o pipefail
+          if ! node seed.mjs 2>&1 | tee "$RUNNER_TEMP/seed.log"; then
+            msg=$(tail -25 "$RUNNER_TEMP/seed.log" | sed 's/%/%25/g' | sed ':a;N;$!ba;s/\n/%0A/g')
+            echo "::error title=Datos iniciales::$msg"
+            exit 1
+          fi
+          echo "::notice title=Datos iniciales::$(tail -1 "$RUNNER_TEMP/seed.log")"
+
+      - name: Borrar credenciales
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"
