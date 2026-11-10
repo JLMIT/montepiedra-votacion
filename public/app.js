@@ -6,7 +6,7 @@ import { getAuth, onAuthStateChanged, signInAnonymously, GoogleAuthProvider, sig
 import { getFirestore, doc, collection, query, where, onSnapshot, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { UNITS } from "./unidades.js";
 
-const VERSION = "202611101400";
+const VERSION = "202611101450";
 const fb = initializeApp({
   apiKey: "AIzaSyBtB3udh8TelPW1bS2MQJZA1GfQxxTc7WI",
   authDomain: "montepiedra-f6ce2.firebaseapp.com",
@@ -47,6 +47,7 @@ const typeOf = it => TYPES[it && it.type] || TYPES.ORD;
 
 /* ---------- state ---------- */
 const S = { config: {}, inhab: {}, stats: null, codes: null, items: {}, reg: {}, attend: {}, votes: {}, admins: [] };
+let acList = []; // [{k, poder}] properties being accredited at the desk
 let UID = null, EMAIL = "", ADMIN = false, TAB = "votar", screenSel = null, assistOpt = "", assistItem = "";
 const pick = {};
 let unsubs = [];
@@ -114,7 +115,6 @@ async function batched(ops) { // ops: [["set"|"delete", ref, data?]] in chunks u
 /* ---------- core calculation ---------- */
 function presentSet(votes) {
   const set = new Set();
-  for (const k in S.reg) if (U[k] && !S.inhab[k]) set.add(k);
   for (const k in S.attend) if (U[k] && !S.inhab[k]) set.add(k);
   if (votes) for (const k in votes) if (U[k]) set.add(k);
   return set;
@@ -166,7 +166,12 @@ async function register(k, code, name, via) {
   try { cur = await getDoc(ref); } catch (e) { throw used; }
   if (cur.exists()) { if (cur.data().uid === owner) return "ya"; throw used; }
   try { await setDoc(ref, { unit: k, uid: owner, clave, name: String(name || "").slice(0, 80), at: serverTimestamp(), via }); }
-  catch (e) { throw errMsg(e).startsWith("No tiene permiso") ? used : errMsg(e); }
+  catch (e) {
+    if (!errMsg(e).startsWith("No tiene permiso")) throw errMsg(e);
+    let again = null; try { again = await getDoc(ref); } catch (er) { throw used; }
+    if (again && again.exists()) throw used;
+    throw `${U[k].n} no está acreditada como presente. Acérquese a la mesa para acreditarla.`;
+  }
   return "ok";
 }
 async function castVotes(itemId, keys, opt, via) {
@@ -180,7 +185,7 @@ async function castVotes(itemId, keys, opt, via) {
     try {
       await setDoc(doc(db, "votos", `${itemId}__${k}`), { item: itemId, unit: k, option: opt, at: serverTimestamp(), uid: owner, channel: via, name: rg.name || "" });
       ok.push(k);
-    } catch (e) { errs.push(errMsg(e).startsWith("No tiene permiso") ? `${U[k].n}: el voto no fue aceptado (ya votó, la votación cerró o la propiedad no está habilitada).` : `${U[k].n}: ${errMsg(e)}`); }
+    } catch (e) { errs.push(errMsg(e).startsWith("No tiene permiso") ? `${U[k].n}: el voto no fue aceptado (ya votó, la votación cerró, o la propiedad no está acreditada o habilitada).` : `${U[k].n}: ${errMsg(e)}`); }
   }
   return { ok, errs };
 }
@@ -339,13 +344,15 @@ function renderAdmin() {
     const nv = its.filter(it => (S.votes[it.id] || {})[u.k]).length, rg = S.reg[u.k];
     rows += `<tr><td>${esc(u.n)}</td><td class="r num">${fmtP(sh(u.k), 4)}</td><td class="mono small">${codes[u.k] ? esc(codes[u.k]) : "—"}</td>
       <td class="small">${rg ? `<span class="tag g">${esc(G[rg.uid] || "Votante")}</span> ${fmtT(rg.at)}${rg.name ? " · " + esc(rg.name) : ""} <button class="btn sm" data-act="release" data-k="${u.k}">Liberar</button>` : `<span class="muted">Sin inscribir</span>`}</td>
-      <td><button class="toggle ${S.attend[u.k] ? "on" : ""}" data-act="t-pres" data-k="${u.k}" aria-label="Presente manual" ${S.inhab[u.k] ? "disabled" : ""}></button></td>
+      <td><button class="toggle ${S.attend[u.k] ? "on" : ""}" data-act="t-acr" data-k="${u.k}" aria-label="Acreditada" ${S.inhab[u.k] && !S.attend[u.k] ? "disabled" : ""}></button>${S.attend[u.k] ? ` <span class="small">${fmtT(S.attend[u.k].at)}${S.attend[u.k].name ? " · " + esc(S.attend[u.k].name) : ""}${S.attend[u.k].poder ? ` <span class="tag">poder</span>` : ""}</span>` : ""}</td>
       <td><button class="toggle red ${S.inhab[u.k] ? "on" : ""}" data-act="t-inh" data-k="${u.k}" aria-label="Inhabilitada"></button></td>
       <td class="r num">${nv}</td></tr>`;
   }
   setHTML($("#u-body"), rows || `<tr><td colspan="7" class="muted">Sin coincidencias.</td></tr>`);
   const nVoters = new Set(Object.values(S.reg).map(r => r.uid)).size;
-  setHTML($("#u-sum"), `Presentes y habilitadas: <b>${pres.size}</b> propiedades = <b>${fmtP(shareOf(pres), 3)}</b> de los derechos · Inscritas: <b>${nReg}</b> por <b>${nVoters}</b> votantes · Inhabilitadas: <b>${nInh}</b> (${fmtP(sInh, 3)}) · Total: ${UNITS.length} propiedades = 100%`);
+  const nAcr = Object.keys(S.attend).filter(x => U[x]).length;
+  setHTML($("#ac-list"), acList.length ? `<div class="props">${acList.map((x, i) => `<div class="p"><span>${esc(U[x.k].n)} <span class="small muted num">${fmtP(sh(x.k))}</span>${S.attend[x.k] ? ` <span class="bad small">ya acreditada${S.attend[x.k].name ? " (" + esc(S.attend[x.k].name) + ")" : ""}</span>` : ""}${S.inhab[x.k] ? ` <span class="bad small">inhabilitada</span>` : ""}${codes[x.k] ? "" : ` <span class="bad small">sin código</span>`}</span><span class="row"><label class="row small"><input type="checkbox" data-act="ac-poder" data-i="${i}" ${x.poder ? "checked" : ""}> Con poder</label><button class="btn sm" data-act="ac-del" data-i="${i}">Quitar</button></span></div>`).join("")}<div class="p tot"><span>${acList.length} ${acList.length === 1 ? "propiedad" : "propiedades"}</span><span class="num">${fmtP(acList.reduce((s, x) => s + sh(x.k), 0))}</span></div></div>` : `<p class="small muted" style="margin:10px 0 0">Acreditadas hasta ahora: <b>${nAcr}</b> propiedades.</p>`);
+  setHTML($("#u-sum"), `Acreditadas y habilitadas: <b>${pres.size}</b> propiedades = <b>${fmtP(shareOf(pres), 3)}</b> de los derechos · Inscritas: <b>${nReg}</b> por <b>${nVoters}</b> votantes · Inhabilitadas: <b>${nInh}</b> (${fmtP(sInh, 3)}) · Total: ${UNITS.length} propiedades = 100%`);
   setHTML($("#a-admins"), S.admins.length ? S.admins.map(e => `<div class="row" style="justify-content:space-between;padding:6px 0;border-top:1px dashed var(--line)"><span>${esc(e)}${e === EMAIL ? ` <span class="tag g">usted</span>` : ""}</span>${e === EMAIL ? "" : `<button class="btn sm danger" data-act="admin-del" data-e="${esc(e)}">Quitar</button>`}</div>`).join("") : `<div class="muted small">Cargando…</div>`);
 }
 
@@ -390,7 +397,7 @@ async function auditPDF(ids) {
   P("Cálculo: cada propiedad pesa su alícuota dividida por la suma de todas las alícuotas (100,00016% en la planilla, normalizado a 100%). Los resultados suman derechos, no personas. Una persona con poder inscribe varias propiedades y su voto se registra por cada una. Los votos y las inscripciones fueron validados por las reglas de seguridad del servidor: código correcto por propiedad, un solo uso por código y un voto por propiedad y tema.");
   y += 6;
   H("1. Quórum de asistencia");
-  P(`Propiedades presentes y habilitadas: ${pres.size} de ${UNITS.length}, que representan ${pdfPct(ps)} de los derechos del condominio.`);
+  P(`Propiedades acreditadas en la mesa y habilitadas: ${pres.size} de ${UNITS.length}, que representan ${pdfPct(ps)} de los derechos del condominio.`);
   T(["Tipo de sesión", "Asistencia mínima", "Asistencia actual", "Cumple"], Object.values(TYPES).map(Ty => [Ty.label, Ty.qLabel, pdfPct(ps), (Ty.qStrict ? ps > Ty.q + EPS : ps >= Ty.q - EPS) ? "Sí" : "No"]));
   const inh = Object.keys(S.inhab).filter(k => U[k]).sort(byName);
   if (inh.length) P(`Propiedades inhabilitadas para votar (${inh.length}, ${pdfPct(inh.reduce((s, k) => s + sh(k), 0))}): ${inh.map(k => U[k].n).join(", ")}.`);
@@ -423,17 +430,19 @@ async function auditPDF(ids) {
   const body = [];
   owners.forEach(d => byU[d].sort((a, b) => String(S.reg[a].at).localeCompare(String(S.reg[b].at))).forEach((k, i) => body.push([i === 0 ? (G[d] || "-") : "", U[k].n, pdfPct(sh(k), 4), fmtT(S.reg[k].at), S.reg[k].via === "mesa" ? "Mesa" : "Teléfono", S.reg[k].name || "", i === 0 ? pdfPct(byU[d].reduce((s, x) => s + sh(x), 0)) : ""])));
   T(["Votante", "Propiedad", "Alícuota", "Inscripción", "Vía", "Nombre declarado", "Total votante"], body.length ? body : [["Sin inscripciones", "", "", "", "", "", ""]], { columnStyles: { 2: { halign: "right" }, 6: { halign: "right" } } });
-  const manual = Object.keys(S.attend).filter(k => U[k] && !S.reg[k]).sort(byName);
-  if (manual.length) { H("Presentes marcados a mano por la mesa", 10.5); P(manual.map(k => `${U[k].n} (${pdfPct(sh(k), 4)})`).join(", ") + ".", 8.5); }
+  const acr = Object.keys(S.attend).filter(k => U[k]).sort((a, b) => String(S.attend[a].at).localeCompare(String(S.attend[b].at)));
+  H("Acreditaciones en la mesa", 10.5);
+  P(`${acr.length} propiedades acreditadas (${pdfPct(acr.reduce((s, k) => s + sh(k), 0))} de los derechos). Retirar una acreditación impide votar en adelante y no borra votos ya emitidos.`, 8.5);
+  T(["Propiedad", "Alícuota", "Hora", "Asiste", "Calidad", "Acreditó"], acr.length ? acr.map(k => [U[k].n, pdfPct(sh(k), 4), fmtT(S.attend[k].at), S.attend[k].name || "", S.attend[k].poder ? "Con poder" : "Propietario o residente", S.attend[k].by || ""]) : [["Sin acreditaciones", "", "", "", "", ""]], { columnStyles: { 1: { halign: "right" } } });
   const pages = doc_.getNumberOfPages();
   for (let i = 1; i <= pages; i++) { doc_.setPage(i); doc_.setFont("helvetica", "normal"); doc_.setFontSize(7.5); doc_.setTextColor(120); doc_.text(`Auditoría · Condominio Montepiedra · Huella ${fp} · Página ${i} de ${pages}`, M, doc_.internal.pageSize.getHeight() - 20); }
   doc_.save(`auditoria-votacion-montepiedra-${now.toISOString().slice(0, 16).replace(/[:T]/g, "-")}.pdf`);
 }
-function cardsPDF() {
+function cardsPDF(only) {
   const doc_ = newPDF(), W = doc_.internal.pageSize.getWidth(), Hh = doc_.internal.pageSize.getHeight();
   const cols = 3, rows = 8, mx = 24, my = 28, cw = (W - 2 * mx) / cols, ch = (Hh - 2 * my) / rows;
   const codes = (S.codes && S.codes.codes) || {};
-  SORTED.filter(u => codes[u.k]).forEach((u, i) => {
+  SORTED.filter(u => codes[u.k] && (!only || only.includes(u.k))).forEach((u, i) => {
     const pos = i % (cols * rows); if (i && pos === 0) doc_.addPage();
     const x = mx + (pos % cols) * cw, y = my + Math.floor(pos / cols) * ch;
     doc_.setDrawColor(190); doc_.setLineDashPattern([3, 3], 0); doc_.rect(x, y, cw, ch); doc_.setLineDashPattern([], 0);
@@ -443,7 +452,7 @@ function cardsPDF() {
     doc_.setFont("helvetica", "normal"); doc_.setFontSize(6.6); doc_.setTextColor(110);
     doc_.text(doc_.splitTextToSize(`Código de esta propiedad. Se usa una sola vez al inscribirse en ${location.host}.`, cw - 20), x + 10, y + 74);
   });
-  doc_.save("codigos-votacion-montepiedra.pdf");
+  doc_.save(only ? `codigos-${only.length === 1 ? only[0].toLowerCase() : only.length + "-propiedades"}.pdf` : "codigos-votacion-montepiedra.pdf");
 }
 
 /* ---------- code list loading ---------- */
@@ -531,7 +540,9 @@ $("#f-item").addEventListener("submit", async e => {
   } catch (er) { $("#i-msg").textContent = errMsg(er); }
 });
 $("#u-search").addEventListener("input", () => renderAdmin());
-document.addEventListener("change", e => { if (e.target.id === "as-item") { assistItem = e.target.value; assistOpt = ""; sched(); } });
+document.addEventListener("change", e => {
+  if (e.target.dataset && e.target.dataset.act === "ac-poder") { const x = acList[+e.target.dataset.i]; if (x) x.poder = e.target.checked; return; }
+  if (e.target.id === "as-item") { assistItem = e.target.value; assistOpt = ""; sched(); } });
 $("#modal").addEventListener("click", e => { if (e.target.id === "modal") closeModal(); });
 $("#btn-admin").addEventListener("click", async () => {
   const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: "select_account" });
@@ -628,7 +639,29 @@ document.addEventListener("click", async e => {
       case "cards": cardsPDF(); break;
       case "copy-codes": { const codes = (S.codes && S.codes.codes) || {}; let t = "Propiedad\tAlícuota (%)\tCódigo\tInscrita\n"; SORTED.forEach(u => t += `${u.n}\t${(sh(u.k) * 100).toFixed(5).replace(".", ",")}\t${codes[u.k] || ""}\t${S.reg[u.k] ? "Sí" : "No"}\n`); await copyText(t, "Listado de códigos"); break; }
       case "release": if (await ask("Liberar inscripción", `El código de ${esc(U[k].n)} quedará disponible para inscribirse de nuevo (por ejemplo, desde otro teléfono). Los votos ya emitidos por esta propiedad se mantienen.`, "Liberar")) { await deleteDoc(doc(db, "reg", k)); toast("Inscripción liberada."); } break;
-      case "t-pres": if (S.attend[k]) await deleteDoc(doc(db, "asistencia", k)); else await setDoc(doc(db, "asistencia", k), { at: serverTimestamp(), by: EMAIL }); break;
+      case "t-acr":
+        if (S.attend[k]) { if (await ask("Retirar acreditación", `${esc(U[k].n)} dejará de contar como presente y no podrá votar en adelante. Sus votos ya emitidos se mantienen.`, "Retirar", true)) await deleteDoc(doc(db, "asistencia", k)); }
+        else await setDoc(doc(db, "asistencia", k), { at: serverTimestamp(), name: "", poder: false, by: EMAIL });
+        break;
+      case "ac-add": {
+        const uk = $("#ac-unit").value; if (!U[uk]) throw "Seleccione la propiedad.";
+        if (acList.some(x => x.k === uk)) throw "Esa propiedad ya está en la lista.";
+        acList.push({ k: uk, poder: acList.length > 0 }); $("#ac-unit").value = ""; sched(); break;
+      }
+      case "ac-del": acList.splice(+id, 1); sched(); break;
+      case "ac-clear": acList = []; $("#ac-name").value = ""; sched(); break;
+      case "ac-go": {
+        const name = $("#ac-name").value.trim(), codes = (S.codes && S.codes.codes) || {};
+        if (!acList.length) throw "Agregue al menos una propiedad.";
+        if (!name) throw "Anote el nombre de quien asiste.";
+        const probs = acList.filter(x => S.attend[x.k] || S.inhab[x.k] || !codes[x.k]).map(x => U[x.k].n);
+        if (probs.length) throw `Revise antes de acreditar: ${probs.join(", ")} (ya acreditada, inhabilitada o sin código).`;
+        await batched(acList.map(x => ["set", doc(db, "asistencia", x.k), { at: serverTimestamp(), name: name.slice(0, 80), poder: !!x.poder, by: EMAIL }]));
+        const keys = acList.map(x => x.k);
+        modal(`<h3 style="margin-top:0">Entregue estas tarjetas a ${esc(name)}</h3><table class="tbl"><thead><tr><th>Propiedad</th><th>Código</th><th>Calidad</th></tr></thead><tbody>${acList.map(x => `<tr><td>${esc(U[x.k].n)}</td><td class="mono"><b>${esc(codes[x.k])}</b></td><td class="small">${x.poder ? "Con poder" : "Propietario o residente"}</td></tr>`).join("")}</tbody></table><p class="small muted">Las propiedades quedaron acreditadas como presentes. Con estos códigos la persona las inscribe en su teléfono; si no tiene teléfono, la mesa vota por ella con «Voto asistido».</p><div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" id="m-pdf">Imprimir estas tarjetas (PDF)</button><button class="btn pri" id="m-ok">Listo</button></div>`);
+        $("#m-ok").onclick = closeModal; $("#m-pdf").onclick = () => cardsPDF(keys);
+        acList = []; $("#ac-name").value = ""; sched(); break;
+      }
       case "t-inh": { const m = { ...S.inhab }; if (m[k]) delete m[k]; else m[k] = true; await setDoc(doc(db, "config", "habiles"), { inhabiles: m }); break; }
       case "admin-del": { const em = b.dataset.e; if (await ask("Quitar administrador", `${esc(em)} dejará de tener acceso a la administración.`, "Quitar", true)) await deleteDoc(doc(db, "admins", em)); break; }
       case "reset-all": {
@@ -672,6 +705,7 @@ function subscribe() {
 /* ---------- boot ---------- */
 $("#r-unit").insertAdjacentHTML("beforeend", unitOptions());
 $("#as-unit").insertAdjacentHTML("beforeend", unitOptions());
+$("#ac-unit").insertAdjacentHTML("beforeend", unitOptions());
 try { $("#r-name").value = localStorage.getItem("mp-name") || ""; } catch (e) {}
 setStatus("Conectando…", "info");
 getRedirectResult(auth).catch(e => toast(errMsg(e), 4000));

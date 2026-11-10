@@ -13,6 +13,9 @@ await env.withSecurityRulesDisabled(async ctx => {
   for (const [k, c] of [["MONTEPIEDRA-52", "AAAA-1111"], ["UYUNI-16", "BBBB-2222"], ["REHUE-10", "CCCC-3333"], ["RALI-10", "DDDD-4444"]]) await setDoc(doc(d, "claves", clave(k, c)), { unit: k });
   await setDoc(doc(d, "items/t1"), { title: "Presupuesto", status: "open", options: ["Sí", "No", "Abstención"] });
   await setDoc(doc(d, "items/t2"), { title: "Cerrado", status: "closed", options: ["Sí", "No"] });
+  await setDoc(doc(d, "items/t3"), { title: "Otro", status: "open", options: ["Sí", "No"] });
+  await setDoc(doc(d, "claves", clave("TABALI-10", "EEEE-5555")), { unit: "TABALI-10" });
+  for (const k of ["MONTEPIEDRA-52", "UYUNI-16", "RALI-10", "REHUE-10"]) await setDoc(doc(d, "asistencia", k), { name: "x" });
 });
 const ana = env.authenticatedContext("ana").firestore();          // votante anónimo
 const beto = env.authenticatedContext("beto").firestore();        // otro votante
@@ -37,6 +40,8 @@ await t("ni el mismo votante puede reescribir su inscripción", assertFails(reg(
 await t("no se puede inscribir a nombre de otro", assertFails(reg(beto, "UYUNI-16", "BBBB-2222", "ana")));
 await t("votante no puede inscribirse como mesa", assertFails(reg(beto, "UYUNI-16", "BBBB-2222", "mesa", "mesa")));
 await t("propiedad inhabilitada no se inscribe", assertFails(reg(beto, "REHUE-10", "CCCC-3333", "beto")));
+await t("propiedad no acreditada no se inscribe aunque tenga código", assertFails(reg(beto, "TABALI-10", "EEEE-5555", "beto")));
+await t("votante no puede acreditarse a sí mismo", assertFails(setDoc(doc(beto, "asistencia/TABALI-10"), { name: "yo" })));
 await t("poder: segunda propiedad para la misma persona", assertSucceeds(reg(ana, "UYUNI-16", "BBBB-2222", "ana", "app", "Ana")));
 await t("votante lee sus inscripciones", assertSucceeds(getDocs(query(collection(ana, "reg"), where("uid", "==", "ana")))));
 await t("votante no lee inscripciones ajenas", assertFails(getDocs(collection(beto, "reg"))));
@@ -58,6 +63,11 @@ await t("mesa inscribe con código", assertSucceeds(reg(adm, "RALI-10", "DDDD-44
 await t("mesa vota por propiedad inscrita en la mesa", assertSucceeds(vote(adm, "t1", "RALI-10", "No", "mesa", "mesa")));
 await t("mesa no vota por propiedad de un teléfono", assertFails(setDoc(doc(adm, "votos/t2__MONTEPIEDRA-52"), { item: "t2", unit: "MONTEPIEDRA-52", option: "Sí", uid: "mesa", channel: "mesa", name: "", at: serverTimestamp() })));
 await t("administración publica temas y estadísticas", assertSucceeds(setDoc(doc(adm, "stats/asistencia"), { n: 3, share: 0.02 })));
+await t("administración acredita una propiedad", assertSucceeds(setDoc(doc(adm, "asistencia/TABALI-10"), { name: "Beto", poder: false })));
+await t("ya acreditada, se inscribe", assertSucceeds(reg(beto, "TABALI-10", "EEEE-5555", "beto")));
+await t("administración retira una acreditación", assertSucceeds(deleteDoc(doc(adm, "asistencia/UYUNI-16"))));
+await t("propiedad retirada no vota en adelante", assertFails(vote(ana, "t3", "UYUNI-16", "Sí", "ana", "app", "Ana")));
+await t("la otra propiedad del mismo votante sí vota", assertSucceeds(vote(ana, "t3", "MONTEPIEDRA-52", "Sí", "ana", "app", "Ana")));
 await t("administración libera una inscripción", assertSucceeds(deleteDoc(doc(adm, "reg/UYUNI-16"))));
 
 await env.cleanup();

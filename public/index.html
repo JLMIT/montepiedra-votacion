@@ -9,7 +9,7 @@
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=202611101400">
+<link rel="stylesheet" href="/styles.css?v=202611101450">
 </head>
 <body>
 <header>
@@ -30,7 +30,7 @@
 <section id="tab-votar">
   <div class="card">
     <h2>Inscriba su propiedad</h2>
-    <p class="muted small" style="margin:0 0 4px">Seleccione su propiedad y escriba el código que le entregaron en la mesa al presentarse. Cada código sirve para una sola propiedad y se usa una sola vez. Si viene con poder de otras propiedades, inscríbalas una por una con su propio código: su voto contará por todas.</p>
+    <p class="muted small" style="margin:0 0 4px">Seleccione su propiedad y escriba el código que le entregaron en la mesa al acreditarse. Cada código sirve para una sola propiedad y se usa una sola vez. Si viene con poder de otras propiedades, inscríbalas una por una con su propio código: su voto contará por todas.</p>
     <form id="f-reg" autocomplete="off">
       <div class="grid3">
         <div><label class="f" for="r-unit">Propiedad</label><select class="in" id="r-unit"><option value="">Seleccione su propiedad…</option></select></div>
@@ -56,6 +56,18 @@
 
 <!-- ============ ADMIN ============ -->
 <section id="tab-admin" class="hide">
+  <div class="card">
+    <h2>Acreditación en la mesa</h2>
+    <p class="muted small" style="margin:0 0 4px">Cuando cada persona se presenta: anote su nombre, agregue su propiedad y las que representa con poder, y entréguele las tarjetas de código. Solo las propiedades acreditadas cuentan como presentes para el quórum y solo ellas pueden inscribirse y votar (el servidor lo exige).</p>
+    <div class="grid3">
+      <div><label class="f" for="ac-name">Nombre de quien asiste</label><input class="in" id="ac-name" placeholder="Nombre y apellido"></div>
+      <div><label class="f" for="ac-unit">Propiedad</label><select class="in" id="ac-unit"><option value="">Seleccione…</option></select></div>
+      <div><button class="btn" type="button" data-act="ac-add">Agregar propiedad</button></div>
+    </div>
+    <div id="ac-list"></div>
+    <div class="row" style="margin-top:12px"><button class="btn pri" type="button" data-act="ac-go">Acreditar y mostrar códigos</button><button class="btn" type="button" data-act="ac-clear">Limpiar</button></div>
+  </div>
+
   <div class="grid2">
     <div class="card">
       <h2>Datos de la asamblea</h2>
@@ -108,11 +120,11 @@
 
   <div class="card">
     <div class="row" style="justify-content:space-between">
-      <div><h2>Propiedades: inscripción, asistencia y habilitación</h2><p class="muted small" style="margin:0">Una propiedad queda presente al inscribirse con su código. «Presente manual» sirve para quien asiste sin inscribirse. «Inhabilitada» la excluye de votar y del quórum (por ejemplo, morosidad, si el reglamento lo establece). «Liberar» deja su código disponible otra vez (por ejemplo, si cambió de teléfono).</p></div>
+      <div><h2>Propiedades: acreditación, inscripción y habilitación</h2><p class="muted small" style="margin:0">«Acreditada» indica que la mesa registró a la propiedad como presente (normalmente desde «Acreditación en la mesa»); solo esas cuentan para el quórum y pueden inscribirse y votar. Retirar la acreditación impide votar en adelante, pero mantiene los votos ya emitidos. «Inhabilitada» la excluye de votar y del quórum (por ejemplo, morosidad, si el reglamento lo establece). «Liberar» deja su código disponible otra vez (por ejemplo, si cambió de teléfono).</p></div>
       <input class="in" id="u-search" placeholder="Buscar propiedad…" style="max-width:240px">
     </div>
     <div id="u-sum" class="small" style="margin:10px 0"></div>
-    <div class="scroll"><table class="tbl"><thead><tr><th>Propiedad</th><th class="r">Alícuota</th><th>Código</th><th>Inscripción</th><th>Presente manual</th><th>Inhabilitada</th><th class="r">Votos</th></tr></thead><tbody id="u-body"></tbody></table></div>
+    <div class="scroll"><table class="tbl"><thead><tr><th>Propiedad</th><th class="r">Alícuota</th><th>Código</th><th>Inscripción</th><th>Acreditada</th><th>Inhabilitada</th><th class="r">Votos</th></tr></thead><tbody id="u-body"></tbody></table></div>
   </div>
 
   <div class="card">
@@ -127,7 +139,7 @@
     <div class="formula small">
       <p style="margin-top:0"><b>Peso de cada propiedad</b> = su alícuota ÷ suma de todas las alícuotas (la planilla suma 100,00016%; se normaliza a 100%).</p>
       <p><b>Voto con poder</b>: quien inscribe varias propiedades emite un solo voto, que se registra por cada una de ellas; pesa la suma de sus alícuotas.</p>
-      <p><b>Derechos presentes</b> = suma de los pesos de las propiedades presentes y habilitadas (inscritas, marcadas a mano o que votaron).</p>
+      <p><b>Derechos presentes</b> = suma de los pesos de las propiedades acreditadas en la mesa y habilitadas.</p>
       <p><b>Votos por opción</b> = suma de los pesos de las propiedades que eligieron esa opción. Se cuentan derechos, no personas.</p>
       <p><b>Ordinaria:</b> se aprueba si «Sí» supera el 50% de los derechos presentes; abstenerse o no votar equivale a no apoyar; requiere asistencia de al menos 33% del total.<br>
       <b>Extraordinaria de mayoría absoluta:</b> «Sí» supera el 50% del total de derechos; asistencia superior al 50%.<br>
@@ -138,7 +150,7 @@
 
   <div class="card">
     <h2>Zona de riesgo</h2>
-    <div class="row"><button class="btn danger" data-act="reset-all">Reiniciar asamblea (borra inscripciones, asistencia y todos los votos)</button></div>
+    <div class="row"><button class="btn danger" data-act="reset-all">Reiniciar asamblea (borra acreditaciones, inscripciones y todos los votos)</button></div>
   </div>
 </section>
 </main>
@@ -150,6 +162,6 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
-<script type="module" src="/app.js?v=202611101400"></script>
+<script type="module" src="/app.js?v=202611101450"></script>
 </body>
 </html>

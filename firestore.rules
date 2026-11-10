@@ -1,5 +1,6 @@
 rules_version = '2';
 // Reglas de seguridad de la votación Montepiedra. Todo lo importante se valida aquí, en el servidor:
+// - solo las propiedades acreditadas como presentes por la mesa pueden inscribirse y votar;
 // - cada código sirve solo para su propiedad y se usa una sola vez (inscripción);
 // - cada propiedad vota una sola vez por tema, solo mientras el tema está abierto y si está habilitada;
 // - los votantes solo leen sus propias inscripciones y votos; nadie ve votos ajenos antes del cierre,
@@ -16,6 +17,7 @@ service cloud.firestore {
       let h = /databases/$(database)/documents/config/habiles;
       return !exists(h) || !(k in get(h).data.get('inhabiles', {}));
     }
+    function acreditada(k) { return exists(/databases/$(database)/documents/asistencia/$(k)); }
     function validReg(k) {
       let d = request.resource.data;
       let c = get(/databases/$(database)/documents/claves/$(d.clave));
@@ -24,7 +26,7 @@ service cloud.firestore {
         && d.name is string && d.name.size() <= 80
         && ((d.uid == request.auth.uid && d.via == 'app') || (d.uid == 'mesa' && d.via == 'mesa' && isAdmin()))
         && c.data.unit == k
-        && habil(k);
+        && habil(k) && acreditada(k);
     }
     function validVote(vid) {
       let d = request.resource.data;
@@ -36,7 +38,7 @@ service cloud.firestore {
         && r.data.uid == d.uid && d.name == r.data.name
         && ((d.uid == request.auth.uid && d.channel == 'app') || (d.uid == 'mesa' && d.channel == 'mesa' && isAdmin()))
         && it.data.status == 'open' && d.option in it.data.options
-        && habil(d.unit);
+        && habil(d.unit) && acreditada(d.unit);
     }
 
     match /admins/{e} {
