@@ -6,7 +6,7 @@ import { getAuth, onAuthStateChanged, signInAnonymously, GoogleAuthProvider, sig
 import { getFirestore, doc, collection, query, where, onSnapshot, getDoc, getDocs, setDoc, deleteDoc, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { UNITS } from "./unidades.js";
 
-const VERSION = "202611101450";
+const VERSION = "202611101500";
 const fb = initializeApp({
   apiKey: "AIzaSyBtB3udh8TelPW1bS2MQJZA1GfQxxTc7WI",
   authDomain: "montepiedra-f6ce2.firebaseapp.com",
@@ -600,7 +600,17 @@ document.addEventListener("click", async e => {
         await setDoc(doc(db, "items", a.id), { ...S.items[a.id], order: oc === oa ? (act === "up" ? oa - 1 : oa + 1) : oc });
         await setDoc(doc(db, "items", c.id), { ...S.items[c.id], order: oa }); break;
       }
-      case "clear": if (await ask("Borrar votos", `Se eliminarán todos los votos del tema «${esc(S.items[id].title)}».`, "Borrar votos", true)) { await deleteWhere("votos", "item", id); toast("Votos borrados."); } break;
+      case "clear": if (await ask("Borrar votos", `Se eliminarán todos los votos del tema «${esc(S.items[id].title)}».${S.items[id].status === "closed" ? " Como el tema está cerrado, vuelve a borrador y se retira su resultado publicado." : ""}`, "Borrar votos", true)) {
+        await deleteWhere("votos", "item", id);
+        if (S.items[id].status === "closed") await setDoc(doc(db, "items", id), { ...S.items[id], status: "draft", final: null, closedAt: null });
+        toast("Votos borrados."); } break;
+      case "clear-votes": {
+        const nv = Object.values(S.votes).reduce((s, m) => s + Object.keys(m).length, 0), nc = items().filter(i => i.status === "closed").length;
+        if (!(await ask("Borrar solo los votos", `Se eliminarán ${nv === 1 ? "el voto registrado" : `los ${nv} votos`} de todos los temas.${nc ? (nc === 1 ? " El tema cerrado vuelve a borrador y se retira su resultado publicado." : ` Los ${nc} temas cerrados vuelven a borrador y se retiran sus resultados publicados.`) : ""} Se mantienen los temas, las acreditaciones, las inscripciones, los códigos y los datos de la asamblea. No se puede deshacer.`, "Borrar votos", true))) break;
+        await deleteWhere("votos");
+        for (const it of items()) if (it.status === "closed") await setDoc(doc(db, "items", it.id), { ...S.items[it.id], status: "draft", final: null, closedAt: null });
+        toast("Votos borrados."); break;
+      }
       case "del": if (await ask("Eliminar tema", `Se eliminará «${esc(S.items[id].title)}» y todos sus votos.`, "Eliminar", true)) { await deleteWhere("votos", "item", id); await deleteDoc(doc(db, "items", id)); toast("Tema eliminado."); } break;
       case "acta": await copyText(actaText(), "Acta de resultados"); break;
       case "as-opt": assistOpt = o; sched(); break;
